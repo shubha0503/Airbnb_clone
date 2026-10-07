@@ -23,7 +23,14 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
     let message = `Request failed (${response.status})`;
     try {
       const data = await response.json();
-      message = typeof data.detail === 'string' ? data.detail : message;
+      if (typeof data.detail === 'string') message = data.detail;
+      else if (Array.isArray(data.detail)) {
+        message = data.detail.map((issue: any) => {
+          const field = Array.isArray(issue.loc) ? issue.loc.at(-1) : null;
+          const label = typeof field === 'string' && field !== 'body' ? `${field}: ` : '';
+          return `${label}${issue.msg || 'Invalid value'}`;
+        }).join('. ');
+      }
     } catch { /* response may not contain JSON */ }
     throw new Error(message);
   }
@@ -46,7 +53,7 @@ const normalizeListing = (l: any): Listing => ({
 const normalizeBooking = (b: any): Booking => ({ ...b, user_id: b.guest_id, listing: b.listing ? normalizeListing(b.listing) : undefined, user: b.guest ? normalizeUser(b.guest) : undefined });
 
 export const api = {
-  register: async (data: {name: string; email: string; password: string; role?: 'guest' | 'host'}) => normalizeUser(await fetchJson<any>('/auth/register', { method: 'POST', body: JSON.stringify(data) })),
+  register: async (data: {name: string; email: string; password: string; role?: 'guest' | 'host'}) => normalizeUser(await fetchJson<any>('/auth/register', { method: 'POST', body: JSON.stringify({ ...data, name: data.name.trim(), email: data.email.trim().toLowerCase() }) })),
   login: async (data: {email: string; password: string}) => normalizeUser(await fetchJson<any>('/auth/login', { method: 'POST', body: JSON.stringify(data) })),
   becomeHost: async (userId: number) => normalizeUser(await fetchJson<any>(`/auth/become-host/${userId}`, { method: 'POST' })),
   createDemoCheckout: (data: {listing_id: number; guest_id: number; check_in: string; check_out: string; guests: number; payment_method: string}) => fetchJson<{booking_id: number; status: string; payment_status: string; payment_provider: string; total_price: number}>('/payments/demo-checkout', { method: 'POST', body: JSON.stringify(data) }),

@@ -3,6 +3,7 @@ import hmac
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, get_db
@@ -34,17 +35,26 @@ def _verify_password(password: str, stored: str | None) -> bool:
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=422, detail="Enter a name with at least 2 characters")
     if len(payload.password) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
-    role = payload.role.strip().lower()
+    role = (payload.role or "").strip().lower()
     if role not in {"guest", "host"}:
         raise HTTPException(status_code=422, detail="Account type must be guest or host")
     email = str(payload.email).strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="An account with this email already exists")
-    user = User(name=payload.name.strip(), email=email, role=role, password_hash=_hash_password(payload.password))
+    user = User(name=name, email=email, role=role, password_hash=_hash_password(payload.password))
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if db.query(User).filter(User.email == email).first():
+            raise HTTPException(status_code=409, detail="An account with this email already exists") from exc
+        raise HTTPException(status_code=500, detail="We could not create the account. Please try again.") from exc
     db.refresh(user)
     return user
 

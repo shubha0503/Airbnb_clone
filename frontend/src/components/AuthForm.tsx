@@ -23,12 +23,14 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (isRegister && name.trim().length < 2) { setError('Enter your name (at least 2 characters).'); return; }
+    if (isRegister && password.length < 8) { setError('Use a password with at least 8 characters.'); return; }
     setBusy(true);
     setError('');
     try {
       const user = isRegister
-        ? await api.register({ name, email, password, role })
-        : await api.login({ email, password });
+        ? await api.register({ name: name.trim(), email: email.trim(), password, role })
+        : await api.login({ email: email.trim(), password });
       localStorage.setItem('airbnb-user-id', String(user.id));
       window.dispatchEvent(new Event('airbnb-user-change'));
       const next = new URLSearchParams(window.location.search).get('next');
