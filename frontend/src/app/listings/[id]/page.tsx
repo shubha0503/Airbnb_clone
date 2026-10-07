@@ -69,6 +69,7 @@ export default function ListingDetailPage() {
   const [guests, setGuests] = useState(1);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'upi'>('card');
 
   // Modals
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
@@ -165,10 +166,10 @@ export default function ListingDetailPage() {
     if (!guestId) { router.push(`/login?next=/listings/${listing.id}`); return; }
     setIsSubmittingBooking(true);
     try {
-      const session = await api.createCheckout({ listing_id: listing.id, guest_id: guestId, check_in: checkIn, check_out: checkOut, guests });
-      window.location.assign(session.checkout_url);
+      const booking = await api.createDemoCheckout({ listing_id: listing.id, guest_id: guestId, check_in: checkIn, check_out: checkOut, guests, payment_method: paymentMethod });
+      router.push(`/payment/success?booking_id=${booking.booking_id}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not start secure checkout');
+      toast.error(err instanceof Error ? err.message : 'Could not complete demo payment');
       setIsSubmittingBooking(false);
     }
   };
@@ -728,13 +729,21 @@ export default function ListingDetailPage() {
               <div className="p-5 sm:p-7 space-y-5">
                 <div className="flex items-center gap-3 rounded-2xl border border-gray-200 p-3">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700"><Lock size={16}/></span>
-                  <div><p className="text-sm font-bold">Secure Stripe checkout</p><p className="mt-0.5 text-xs text-gray-500">Stripe test mode · no real charge</p></div>
+                  <div><p className="text-sm font-bold">Demo checkout</p><p className="mt-0.5 text-xs text-gray-500">Secure-looking preview · no real charge</p></div>
                 </div>
                 <section className="space-y-3">
                   <h4 className="text-lg font-bold">Payment details</h4>
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-600">Continue to Stripe&apos;s hosted test checkout to enter test payment details. This app never receives or stores card data.</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setPaymentMethod('card')} className={`rounded-xl border p-3 text-sm font-semibold ${paymentMethod === 'card' ? 'border-gray-900 bg-gray-50' : 'border-gray-200'}`}>▣ Credit or debit card</button>
+                    <button type="button" onClick={() => setPaymentMethod('upi')} className={`rounded-xl border p-3 text-sm font-semibold ${paymentMethod === 'upi' ? 'border-gray-900 bg-gray-50' : 'border-gray-200'}`}>◉ UPI</button>
+                  </div>
+                  {paymentMethod === 'card' ? <div className="space-y-3">
+                    <input aria-label="Cardholder name" placeholder="Name on card" autoComplete="cc-name" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm" />
+                    <input aria-label="Card number" placeholder="1234  5678  9012  3456" inputMode="numeric" autoComplete="cc-number" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm" />
+                    <div className="grid grid-cols-2 gap-3"><input aria-label="Expiry date" placeholder="MM / YY" autoComplete="cc-exp" className="min-w-0 rounded-xl border border-gray-300 px-4 py-3 text-sm" /><input aria-label="Security code" placeholder="CVV" inputMode="numeric" autoComplete="cc-csc" className="min-w-0 rounded-xl border border-gray-300 px-4 py-3 text-sm" /></div>
+                  </div> : <input aria-label="UPI ID" placeholder="yourname@bank" className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm" />}
+                  <div className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">This is a demo payment. No payment is processed and card or UPI details are never saved.</div>
                 </section>
-                <p className="text-xs leading-5 text-gray-500">Stripe test card: 4242 4242 4242 4242 · any future expiry · any 3 digit CVC.</p>
               </div>
               <div className="bg-gray-50 p-5 sm:p-7 md:border-l md:border-gray-200">
             <div className="space-y-4 text-xs">
@@ -771,7 +780,7 @@ export default function ListingDetailPage() {
               disabled={isSubmittingBooking}
               className="w-full bg-airbnb hover:bg-airbnb-dark text-white font-bold py-3.5 rounded-2xl shadow-md transition flex items-center justify-center gap-2 text-xs"
             >
-              {isSubmittingBooking ? 'Connecting to Stripe…' : `Continue to payment · ₹${totalDue.toLocaleString('en-IN')}`}
+              {isSubmittingBooking ? 'Confirming demo payment…' : `Confirm demo payment · ₹${totalDue.toLocaleString('en-IN')}`}
             </button>
               </div>
             </div>

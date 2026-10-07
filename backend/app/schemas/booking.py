@@ -24,6 +24,8 @@ class BookingResponse(BaseModel):
     total_price: float
     status: str
     payment_status: str = "legacy"
+    payment_provider: str = "legacy"
+    payment_method: str | None = None
     created_at: datetime
 
     class Config:

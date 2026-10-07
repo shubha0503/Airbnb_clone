@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/bookings", tags=["Bookings"])
 
 @router.post("/", status_code=409)
 def create_booking():
-    raise HTTPException(status_code=409, detail="Bookings are confirmed only after verified payment. Start checkout at /api/payments/checkout.")
+    raise HTTPException(status_code=409, detail="Bookings are recorded through demo checkout at /api/payments/demo-checkout.")
 
 
 @router.get("/my-trips/{user_id}")

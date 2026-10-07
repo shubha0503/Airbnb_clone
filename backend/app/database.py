@@ -52,8 +52,8 @@ def ensure_schema():
         columns = {column["name"] for column in inspect(engine).get_columns("bookings")}
         booking_migrations = {
             "payment_status": "VARCHAR NOT NULL DEFAULT 'legacy'",
-            "stripe_session_id": "VARCHAR",
-            "stripe_payment_intent_id": "VARCHAR",
+            "payment_provider": "VARCHAR NOT NULL DEFAULT 'legacy'",
+            "payment_method": "VARCHAR",
         }
         with engine.begin() as connection:
             for column, definition in booking_migrations.items():
@@ -65,11 +65,6 @@ def ensure_schema():
         if not duplicates:
             with engine.begin() as connection:
                 connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wishlists_user_listing ON wishlists(user_id, listing_id)"))
-    if "bookings" in inspect(engine).get_table_names():
-        with engine.begin() as connection:
-            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_bookings_stripe_session ON bookings(stripe_session_id) WHERE stripe_session_id IS NOT NULL"))
-
-
 def get_db():
     db = SessionLocal()
     try:

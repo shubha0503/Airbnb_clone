@@ -63,5 +63,5 @@ class Booking(Base):
     )
 
     payment_status = Column(String, nullable=False, default="legacy")
-    stripe_session_id = Column(String, nullable=True, unique=True)
-    stripe_payment_intent_id = Column(String, nullable=True)
+    payment_provider = Column(String, nullable=False, default="legacy")
+    payment_method = Column(String, nullable=True)

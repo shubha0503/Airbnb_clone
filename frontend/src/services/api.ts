@@ -49,9 +49,8 @@ export const api = {
   register: async (data: {name: string; email: string; password: string; role?: 'guest' | 'host'}) => normalizeUser(await fetchJson<any>('/auth/register', { method: 'POST', body: JSON.stringify(data) })),
   login: async (data: {email: string; password: string}) => normalizeUser(await fetchJson<any>('/auth/login', { method: 'POST', body: JSON.stringify(data) })),
   becomeHost: async (userId: number) => normalizeUser(await fetchJson<any>(`/auth/become-host/${userId}`, { method: 'POST' })),
-  createCheckout: (data: {listing_id: number; guest_id: number; check_in: string; check_out: string; guests: number}) => fetchJson<{checkout_url: string; session_id: string; booking_id: number}>('/payments/checkout', { method: 'POST', body: JSON.stringify(data) }),
-  getPaymentSession: (sessionId: string) => fetchJson<{paid: boolean; booking_id: number | null; status: string; payment_status: string}>(`/payments/session/${encodeURIComponent(sessionId)}`),
-  cancelPendingCheckout: (bookingId: number) => fetchJson<{status: string}>(`/payments/cancel/${bookingId}`, { method: 'POST' }),
+  createDemoCheckout: (data: {listing_id: number; guest_id: number; check_in: string; check_out: string; guests: number; payment_method: string}) => fetchJson<{booking_id: number; status: string; payment_status: string; payment_provider: string; total_price: number}>('/payments/demo-checkout', { method: 'POST', body: JSON.stringify(data) }),
+  getDemoBooking: (bookingId: number) => fetchJson<{booking_id: number; status: string; payment_status: string; payment_provider: string}>(`/payments/demo-booking/${bookingId}`),
   getAmenities: () => fetchJson<{id: number; name: string}[]>('/amenities/'),
   getUser: async (id: number) => normalizeUser(await fetchJson<any>(`/users/${id}`)),
   getListings: async (filters: SearchFilters = {}) => {
