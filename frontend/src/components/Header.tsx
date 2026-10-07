@@ -54,6 +54,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
 
   // Search Bar Expansion State
   const [isExpandedSearch, setIsExpandedSearch] = useState(false);
+  const [searchSubmitted, setSearchSubmitted] = useState(false);
   const [activeSearchTab, setActiveSearchTab] = useState<'where' | 'when' | 'who'>('where');
 
   // Search Inputs
@@ -69,11 +70,21 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
 
   useEffect(() => {
     api.getAllUsers().then(setAllUsers).catch(console.error);
-    const params = new URLSearchParams(window.location.search);
-    setSearchLocation(params.get('location') || '');
-    setSearchCheckIn(params.get('checkIn') || '');
-    setSearchCheckOut(params.get('checkOut') || '');
-    setGuestAdults(Number(params.get('guests')) || 1);
+    const syncSearchFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      setSearchLocation(params.get('location') || '');
+      setSearchCheckIn(params.get('checkIn') || '');
+      setSearchCheckOut(params.get('checkOut') || '');
+      setGuestAdults(Number(params.get('guests')) || 1);
+      setSearchSubmitted(params.get('search') === '1' || params.has('location') || params.has('checkIn'));
+    };
+    syncSearchFromUrl();
+    window.addEventListener('popstate', syncSearchFromUrl);
+    window.addEventListener('airbnb-search-clear', syncSearchFromUrl);
+    return () => {
+      window.removeEventListener('popstate', syncSearchFromUrl);
+      window.removeEventListener('airbnb-search-clear', syncSearchFromUrl);
+    };
   }, []);
 
   const handleSwitchUser = async (user: User) => {
@@ -96,10 +107,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
       checkOut: searchCheckOut || undefined,
       guests: totalGuests > 0 ? totalGuests : undefined,
     };
+    setSearchSubmitted(true);
+    window.dispatchEvent(new CustomEvent('airbnb-search-submit', { detail: filters }));
 
     if (onApplyFilters) onApplyFilters(filters);
     else {
       const params = new URLSearchParams();
+      params.set('search', '1');
       if (filters.location) params.set('location', filters.location);
       if (filters.checkIn) params.set('checkIn', filters.checkIn);
       if (filters.checkOut) params.set('checkOut', filters.checkOut);
@@ -117,7 +131,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
         <div className="flex flex-wrap items-center justify-between min-h-20">
           
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 cursor-pointer group shrink-0">
+            <Link href="/" onClick={() => { setSearchSubmitted(false); window.dispatchEvent(new Event('airbnb-search-clear')); }} className="flex items-center gap-2 cursor-pointer group shrink-0">
             <svg
               className="h-8 w-auto text-airbnb transition-transform group-hover:scale-105"
               viewBox="0 0 32 32"
@@ -132,7 +146,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
 
           {/* Desktop category navigation */}
           <nav aria-label="Explore" className="hidden md:flex items-center gap-5 lg:gap-8 text-sm font-semibold">
-            <Link href="/" className={`flex items-center gap-2 pb-1 border-b-2 transition ${pathname === '/' ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-black'}`}>
+            <Link href="/" onClick={() => { setSearchSubmitted(false); window.dispatchEvent(new Event('airbnb-search-clear')); }} className={`flex items-center gap-2 pb-1 border-b-2 transition ${pathname === '/' ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-black'}`}>
               <span aria-hidden="true" className="text-[27px] leading-none drop-shadow-sm">🌍</span>
               <span>All</span>
             </Link>
@@ -151,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
           </nav>
 
           {/* Compact Pill Search Button (When not expanded) */}
-          {!isExpandedSearch && pathname !== '/' && (
+          {!isExpandedSearch && (pathname !== '/' || searchSubmitted) && (
             <div
               onClick={() => setIsExpandedSearch(true)}
               className="flex min-w-0 max-w-[46vw] sm:max-w-none items-center border border-gray-300 rounded-full py-2 px-2 sm:px-4 shadow-sm hover:shadow-md cursor-pointer transition-all duration-200 gap-2 sm:gap-3 bg-white"
@@ -263,7 +277,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
 
         </div>
 
-        {pathname === '/' && !isExpandedSearch && (
+        {pathname === '/' && !searchSubmitted && !isExpandedSearch && (
           <div className="hidden md:flex justify-center pb-7 pt-1">
             <div className="flex w-full max-w-[740px] items-center rounded-full border border-gray-300 bg-white py-2 pl-7 pr-2 shadow-sm transition hover:shadow-md">
               <button onClick={() => { setIsExpandedSearch(true); setActiveSearchTab('where'); }} className="min-w-0 flex-1 border-r border-gray-200 pr-6 text-left">
@@ -277,6 +291,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
               </button>
               <button onClick={handleExecuteSearch} aria-label="Search stays" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-airbnb text-white transition hover:bg-airbnb-dark"><Search size={19}/></button>
             </div>
+          </div>
+        )}
+
+        {pathname === '/' && !searchSubmitted && !isExpandedSearch && (
+          <div className="px-4 pb-3 md:hidden">
+            <button onClick={() => { setIsExpandedSearch(true); setActiveSearchTab('where'); }} className="flex w-full items-center gap-3 rounded-full border border-gray-300 bg-white px-4 py-3 text-left shadow-sm">
+              <Search size={18} className="shrink-0 text-gray-700" />
+              <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-gray-900">Where to?</span><span className="block truncate text-xs text-gray-500">{searchLocation || 'Anywhere'} · {searchCheckIn && searchCheckOut ? `${searchCheckIn} – ${searchCheckOut}` : 'Any week'} · {totalGuests} guest(s)</span></span>
+            </button>
           </div>
         )}
 

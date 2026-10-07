@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import Link from 'next/link';
 import { Listing } from '@/types';
@@ -11,6 +11,21 @@ import { getListingImageUrl, useImageFallback } from '@/lib/images';
 interface LeafletMapProps {
   listings: Listing[];
 }
+
+const FitListings: React.FC<LeafletMapProps> = ({ listings }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const located = listings.filter((listing) => Number.isFinite(listing.latitude) && Number.isFinite(listing.longitude) && (listing.latitude !== 0 || listing.longitude !== 0));
+    if (located.length > 1) {
+      map.fitBounds(L.latLngBounds(located.map((listing) => [listing.latitude, listing.longitude])), { padding: [36, 36], maxZoom: 11 });
+    } else if (located.length === 1) {
+      map.setView([located[0].latitude, located[0].longitude], 13);
+    }
+  }, [listings, map]);
+
+  return null;
+};
 
 export const LeafletMapInternal: React.FC<LeafletMapProps> = ({ listings }) => {
   if (!listings || listings.length === 0) return null;
@@ -28,9 +43,10 @@ export const LeafletMapInternal: React.FC<LeafletMapProps> = ({ listings }) => {
         scrollWheelZoom={true}
         style={{ width: '100%', height: '100%', minHeight: '380px' }}
       >
+        <FitListings listings={listings} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
         {listings.map((listing) => {
