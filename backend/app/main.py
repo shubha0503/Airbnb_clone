@@ -43,6 +43,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "https://airbnb-clone-plum-alpha.vercel.app",
     ],
+    allow_origin_regex=r"https://airbnb-clone-[a-z0-9-]+\.vercel\.app",
 
     allow_credentials=True,
 
