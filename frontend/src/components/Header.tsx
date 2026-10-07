@@ -11,8 +11,6 @@ import {
   Heart, 
   Calendar as CalendarIcon, 
   Home as HomeIcon, 
-  RefreshCw, 
-  Check, 
   MapPin, 
   Plus, 
   Minus, 
@@ -25,13 +23,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { User, SearchFilters } from '@/types';
-import { api } from '@/services/api';
-import toast from 'react-hot-toast';
 
 interface HeaderProps {
   onOpenSearch?: () => void;
   currentUser?: User | null;
-  onUserSwitch?: (newUser: User) => void;
   onApplyFilters?: (filters: SearchFilters) => void;
 }
 
@@ -44,11 +39,10 @@ const SUGGESTED_DESTINATIONS = [
   { name: 'Mumbai, Maharashtra', desc: 'For sights like Gateway of India', query: 'Mumbai', icon: Building, color: 'text-indigo-500 bg-indigo-50' },
 ];
 
-export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUserSwitch, onApplyFilters }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onApplyFilters }) => {
   const router = useRouter();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
   
   const activeHeaderTab = pathname === '/experiences' ? 'experiences' : pathname === '/services' ? 'services' : 'homes';
 
@@ -69,7 +63,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
   const totalGuests = guestAdults + guestChildren;
 
   useEffect(() => {
-    api.getAllUsers().then(setAllUsers).catch(console.error);
     const syncSearchFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
       setSearchLocation(params.get('location') || '');
@@ -87,17 +80,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
     };
   }, []);
 
-  const handleSwitchUser = async (user: User) => {
-    try {
-      const updatedUser = user;
-      localStorage.setItem('airbnb-user-id', String(user.id));
-      window.dispatchEvent(new Event('airbnb-user-change'));
-      if (onUserSwitch) onUserSwitch(updatedUser);
-      toast.success(`Switched role to ${updatedUser.name} (${updatedUser.is_host ? 'Host' : 'Guest'})`);
-      setIsMenuOpen(false);
-    } catch {
-      toast.error('Failed to switch user role');
-    }
+  const handleSignOut = () => {
+    localStorage.removeItem('airbnb-user-id');
+    window.dispatchEvent(new Event('airbnb-user-change'));
+    setIsMenuOpen(false);
+    router.push('/');
   };
 
   const handleExecuteSearch = () => {
@@ -186,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
             </div>
           )}
 
-          {/* Right Menu & User Persona Switcher */}
+          {/* Account menu */}
           <div className="flex items-center gap-2">
             <Link
               href="/host"
@@ -217,15 +204,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
 
               {isMenuOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in slide-in-from-top-2">
-                  <div className="px-4 py-2 border-b border-gray-100">
-                    <p className="text-xs text-gray-500 font-medium">Logged in as</p>
-                    <p className="text-sm font-semibold text-gray-900">{currentUser?.name || 'Guest User'}</p>
-                    <p className="text-xs text-airbnb font-medium">{currentUser?.is_host ? '⚡ Host Mode' : '✈️ Guest Mode'}</p>
-                  </div>
-
-                  <div className="py-1 border-b border-gray-100">
+                  {currentUser ? <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-sm font-semibold text-gray-900">{currentUser.name}</p>
+                    <p className="text-xs text-gray-500">{currentUser.email}</p>
+                    <p className="mt-1 text-xs text-airbnb font-medium">{currentUser.is_host ? 'Host account' : 'Guest account'}</p>
+                  </div> : <div className="py-1 border-b border-gray-100">
                     <Link href="/login" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2.5 text-sm font-semibold text-gray-900 hover:bg-gray-50">Log in</Link>
                     <Link href="/register" onClick={() => setIsMenuOpen(false)} className="block px-4 py-2.5 text-sm font-semibold text-airbnb hover:bg-gray-50">Sign up</Link>
+                  </div>}
+
+                  <div className="py-1 border-b border-gray-100">
                     <Link
                       href="/trips"
                       onClick={() => setIsMenuOpen(false)}
@@ -253,21 +241,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch, currentUser, onUse
                   </div>
 
                   <div className="px-4 pt-2 pb-1">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <RefreshCw size={12} /> Switch Persona
-                    </p>
-                    {allUsers.map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => handleSwitchUser(u)}
-                        className={`w-full text-left text-xs py-1.5 px-2 rounded-lg flex items-center justify-between transition ${
-                          currentUser?.id === u.id ? 'bg-rose-50 text-airbnb font-bold' : 'hover:bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        <span>{u.name} ({u.is_host ? 'Host' : 'Guest'})</span>
-                        {currentUser?.id === u.id && <Check size={14} className="text-airbnb" />}
-                      </button>
-                    ))}
+                    {currentUser ? <button onClick={handleSignOut} className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-100">Log out</button> : <Link href="/register" onClick={() => setIsMenuOpen(false)} className="block rounded-lg px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100">Create an account</Link>}
                   </div>
                 </div>
               )}

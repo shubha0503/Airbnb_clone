@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 from app.database import SessionLocal, ensure_schema
@@ -20,6 +21,17 @@ def seed_database():
     db = SessionLocal()
 
     try:
+
+        has_existing_data = any((
+            db.query(User).count(),
+            db.query(Listing).count(),
+            db.query(Booking).count(),
+            db.query(Wishlist).count(),
+        ))
+        if has_existing_data and os.getenv("AIRBNB_RESET_DATABASE") != "1":
+            print("Existing Airbnb data found; seeding was skipped to protect it.")
+            print("Set AIRBNB_RESET_DATABASE=1 only when you intentionally want to replace the database with demo data.")
+            return
 
         # --------------------------------------------------
         # CLEAR EXISTING DATA

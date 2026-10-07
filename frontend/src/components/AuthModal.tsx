@@ -33,7 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
       onLoginSuccess?.();
       onClose();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not load demo accounts');
+      toast.error(error instanceof Error ? error.message : 'Could not sign in. Check your email and password.');
     } finally {
       setIsSubmitting(false);
     }

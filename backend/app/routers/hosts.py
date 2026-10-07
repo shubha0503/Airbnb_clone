@@ -49,7 +49,7 @@ def get_host_dashboard(
     bookings_count = (
         db.query(Booking)
         .join(Listing)
-        .filter(Listing.host_id == host_id)
+        .filter(Listing.host_id == host_id, Booking.status == "confirmed")
         .count()
     )
 
@@ -59,6 +59,7 @@ def get_host_dashboard(
         .filter(
             Listing.host_id == host_id,
             Booking.status == "confirmed",
+            Booking.payment_status == "paid",
         )
         .all()
     )

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Listing, Booking, User } from '@/types';
 import Link from 'next/link';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 import toast from 'react-hot-toast';
 import { getListingImageUrl, useImageFallback } from '@/lib/images';
 
@@ -26,7 +26,7 @@ const AMENITIES_LIST = ['WiFi', 'Kitchen', 'Air conditioning', 'TV', 'Free parki
 
 export default function HostDashboardPage() {
   const [hostId, setHostId] = useState<number | null>(null);
-  const [hostProfiles, setHostProfiles] = useState<User[]>([]);
+  const [account, setAccount] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<'listings' | 'reservations'>('listings');
   const [listings, setListings] = useState<Listing[]>([]);
   const [reservations, setReservations] = useState<Booking[]>([]);
@@ -82,27 +82,35 @@ export default function HostDashboardPage() {
   };
 
   useEffect(() => {
-    api.getAllUsers().then((users) => {
-      const hosts = users.filter((user) => user.is_host);
-      setHostProfiles(hosts);
-      const savedId = Number(localStorage.getItem('airbnb-user-id'));
-      const selected = users.find((user) => user.id === savedId);
-      if (selected?.is_host) setHostId(selected.id);
-      else setLoading(false);
-    }).catch((err) => {
-      toast.error(err instanceof Error ? err.message : 'Could not load host profiles');
-      setLoading(false);
-    });
+    const syncAccount = () => {
+      const savedId = getCurrentUserId();
+      if (!savedId) { setAccount(null); setHostId(null); setLoading(false); return; }
+      api.getUser(savedId).then((user) => {
+        setAccount(user);
+        setHostId(user.is_host ? user.id : null);
+        if (!user.is_host) setLoading(false);
+      }).catch(() => { setAccount(null); setHostId(null); setLoading(false); });
+    };
+    syncAccount();
+    window.addEventListener('airbnb-user-change', syncAccount);
+    return () => window.removeEventListener('airbnb-user-change', syncAccount);
   }, []);
 
   useEffect(() => {
     if (hostId) fetchData();
   }, [hostId]);
 
-  const activateHost = (host: User) => {
-    localStorage.setItem('airbnb-user-id', String(host.id));
-    window.dispatchEvent(new Event('airbnb-user-change'));
-    setHostId(host.id);
+  const becomeHost = async () => {
+    if (!account) return;
+    try {
+      const host = await api.becomeHost(account.id);
+      setAccount(host);
+      setHostId(host.id);
+      window.dispatchEvent(new Event('airbnb-user-change'));
+      toast.success('Your account is ready for hosting.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not activate host tools');
+    }
   };
 
   const openCreateModal = () => {
@@ -221,7 +229,7 @@ export default function HostDashboardPage() {
     }
   };
 
-  const totalRevenue = reservations.reduce((acc, r) => acc + (r.status === 'confirmed' ? r.total_price : 0), 0);
+  const totalRevenue = reservations.reduce((acc, r) => acc + (r.payment_status === 'paid' && r.status === 'confirmed' ? r.total_price : 0), 0);
 
   if (loading && !hostId) {
     return <main className="min-h-[70vh] bg-gray-50 px-4 py-12"><section className="mx-auto max-w-xl animate-pulse rounded-3xl border border-gray-200 bg-white p-8"><div className="h-7 w-48 rounded bg-gray-200"/><div className="mt-4 h-4 w-full rounded bg-gray-100"/><div className="mt-2 h-4 w-2/3 rounded bg-gray-100"/></section></main>;
@@ -233,11 +241,8 @@ export default function HostDashboardPage() {
         <section className="mx-auto max-w-xl rounded-3xl border border-gray-200 bg-white p-7 shadow-sm sm:p-10">
           <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-airbnb"><Home size={26} /></div>
           <h1 className="text-2xl font-bold text-gray-900">Your host dashboard</h1>
-          <p className="mt-2 text-sm leading-6 text-gray-600">This page needs a host profile. Choose one of the assignment demo hosts below to manage listings and reservations.</p>
-          <div className="mt-6 space-y-2">
-            {hostProfiles.map((host) => <button key={host.id} onClick={() => activateHost(host)} className="flex w-full items-center justify-between rounded-xl border border-gray-200 p-4 text-left hover:border-gray-900"><span><span className="block font-semibold text-gray-900">{host.name}</span><span className="text-sm text-gray-500">{host.email}</span></span><span className="text-sm font-semibold text-airbnb">Continue as host →</span></button>)}
-          </div>
-          {hostProfiles.length === 0 && <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">No host profile is available yet. Register a guest account, then ask an administrator to grant host access.</p>}
+          <p className="mt-2 text-sm leading-6 text-gray-600">{account ? 'Switch your account to host mode to publish stays and manage reservations.' : 'Log in to your own account or create one to manage stays as a host.'}</p>
+          {account ? <button onClick={becomeHost} className="mt-6 rounded-xl bg-airbnb px-5 py-3 text-sm font-semibold text-white hover:bg-airbnb-dark">Become a host</button> : <div className="mt-6 flex gap-3"><Link href="/login?next=/host" className="rounded-xl bg-airbnb px-5 py-3 text-sm font-semibold text-white">Log in</Link><Link href="/register?next=/host" className="rounded-xl border border-gray-300 px-5 py-3 text-sm font-semibold">Create account</Link></div>}
           <Link href="/" className="mt-6 inline-flex text-sm font-semibold text-gray-700 underline">Return to stays</Link>
         </section>
       </main>
@@ -380,7 +385,10 @@ export default function HostDashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {reservations.map((res) => (
+              {reservations.map((res) => {
+                const paid = res.payment_status === 'paid' && res.status === 'confirmed';
+                const demo = res.payment_status === 'legacy';
+                return (
                 <div key={res.id} className="bg-white border border-gray-200 rounded-3xl p-6 shadow-xs flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="bg-rose-50 text-airbnb p-3 rounded-2xl"><Calendar size={20} /></div>
@@ -392,11 +400,12 @@ export default function HostDashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-gray-500">Earnings</p>
-                    <p className="text-lg font-bold text-gray-900">₹{res.total_price.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-                    <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{res.status}</span>
+                    <p className="text-lg font-bold text-gray-900">{paid ? `₹${res.total_price.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</p>
+                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${paid ? 'text-emerald-700 bg-emerald-50' : 'text-gray-600 bg-gray-100'}`}>{paid ? 'Paid' : res.status === 'cancelled' ? 'Cancelled' : demo ? 'Demo reservation' : res.payment_status.replace('_', ' ')}</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

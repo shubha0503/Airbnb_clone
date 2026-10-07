@@ -61,3 +61,7 @@ class Booking(Base):
         "User",
         back_populates="bookings"
     )
+
+    payment_status = Column(String, nullable=False, default="legacy")
+    stripe_session_id = Column(String, nullable=True, unique=True)
+    stripe_payment_intent_id = Column(String, nullable=True)

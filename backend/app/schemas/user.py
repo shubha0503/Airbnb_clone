@@ -24,6 +24,7 @@ class RegisterRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
+    role: str = "guest"
 
 
 class LoginRequest(BaseModel):

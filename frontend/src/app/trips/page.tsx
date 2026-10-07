@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Calendar, MapPin, CheckCircle, XCircle, ArrowRight } from 'lucide-react';
 import { Booking } from '@/types';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 import toast from 'react-hot-toast';
 import { getListingImageUrl, useImageFallback } from '@/lib/images';
 
@@ -13,9 +13,10 @@ export default function MyTripsPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchTrips = async () => {
+    const userId = getCurrentUserId();
+    if (!userId) { setBookings([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const userId = Number(localStorage.getItem('airbnb-user-id')) || 4;
       const data = await api.getUserTrips(userId);
       setBookings(data);
     } catch (err) {
@@ -27,7 +28,11 @@ export default function MyTripsPage() {
 
   useEffect(() => {
     fetchTrips();
+    window.addEventListener('airbnb-user-change', fetchTrips);
+    return () => window.removeEventListener('airbnb-user-change', fetchTrips);
   }, []);
+
+  const currentUserId = getCurrentUserId();
 
   const handleCancelBooking = async (bookingId: number) => {
     if (!confirm('Are you sure you want to cancel this booking?')) return;
@@ -56,12 +61,12 @@ export default function MyTripsPage() {
       ) : bookings.length === 0 ? (
         <div className="bg-gray-50 rounded-3xl p-12 text-center border border-gray-200">
           <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-bold text-gray-900 mb-2">No trips booked... yet!</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-2">{currentUserId ? 'No trips booked... yet!' : 'Log in to see your trips'}</h3>
           <p className="text-sm text-gray-500 max-w-sm mx-auto mb-6">
-            Time to dust off your bags and start planning your next adventure.
+            {currentUserId ? 'Time to dust off your bags and start planning your next adventure.' : 'Bookings you make will appear here under your account.'}
           </p>
           <Link
-            href="/"
+            href={currentUserId ? '/' : '/login?next=/trips'}
             className="bg-airbnb hover:bg-airbnb-dark text-white font-bold py-3 px-6 rounded-xl transition text-xs inline-flex items-center gap-2"
           >
             Explore Airbnb <ArrowRight size={14} />
@@ -95,7 +100,7 @@ export default function MyTripsPage() {
                         }`}
                       >
                         {isConfirmed ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                        {booking.status.toUpperCase()}
+                        {booking.status === 'cancelled' ? (booking.payment_status === 'paid' ? 'CANCELLED · PAID' : 'CANCELLED') : booking.payment_status === 'paid' ? 'PAID · CONFIRMED' : booking.payment_status === 'legacy' ? 'DEMO RESERVATION' : booking.payment_status === 'pending' ? 'AWAITING PAYMENT' : booking.status.replace('_', ' ').toUpperCase()}
                       </span>
                       <span className="text-xs text-gray-400">Ref: #{booking.id}</span>
                     </div>
@@ -131,7 +136,7 @@ export default function MyTripsPage() {
                       </Link>
                     )}
 
-                    {isConfirmed && (
+                    {(isConfirmed || booking.status === 'pending_payment') && (
                       <button
                         onClick={() => handleCancelBooking(booking.id)}
                         className="text-xs font-bold text-rose-600 hover:bg-rose-50 py-2 px-3 rounded-xl transition"

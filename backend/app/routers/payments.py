@@ -54,14 +54,27 @@ def _set_session_status(session: dict, db: Session) -> Booking | None:
     booking_id = (session.get("metadata") or {}).get("booking_id")
     if not booking_id:
         return None
-    booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    try:
+        booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+    except (TypeError, ValueError):
+        return None
     if not booking:
         return None
-    if session.get("payment_status") == "paid":
+    session_id = session.get("id")
+    if booking.stripe_session_id and session_id != booking.stripe_session_id:
+        return None
+    amount_matches = session.get("amount_total") == round(booking.total_price * 100)
+    currency_matches = (session.get("currency") or "").lower() == "inr"
+    intent = session.get("payment_intent")
+    if session.get("payment_status") == "paid" and amount_matches and currency_matches:
         booking.status = "confirmed"
+        booking.payment_status = "paid"
+        booking.stripe_session_id = booking.stripe_session_id or session_id
+        booking.stripe_payment_intent_id = intent.get("id") if isinstance(intent, dict) else intent
         db.commit()
-    elif session.get("status") == "expired" or session.get("payment_status") == "unpaid" and session.get("status") == "complete":
+    elif booking.status == "pending_payment" and (session.get("status") == "expired" or session.get("payment_status") == "unpaid" and session.get("status") == "complete"):
         booking.status = "cancelled"
+        booking.payment_status = "cancelled"
         db.commit()
     return booking
 
@@ -98,26 +111,37 @@ def create_checkout(payload: CheckoutRequest, request: FastAPIRequest, db: Sessi
     booking = Booking(
         listing_id=listing.id, guest_id=guest.id, check_in=payload.check_in, check_out=payload.check_out,
         guests=payload.guests, nights=nights, subtotal=subtotal, cleaning_fee=cleaning_fee,
-        service_fee=service_fee, total_price=total, status="pending_payment",
+        service_fee=service_fee, total_price=total, status="pending_payment", payment_status="pending",
     )
     db.add(booking)
     db.commit()
     db.refresh(booking)
 
-    origin = str(request.headers.get("origin") or "http://localhost:3000").rstrip("/")
+    origin = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    cancel_query = urlencode({
+        "booking_id": booking.id,
+        "listing_id": listing.id,
+        "checkIn": payload.check_in.isoformat(),
+        "checkOut": payload.check_out.isoformat(),
+        "guests": payload.guests,
+    })
     try:
         session = stripe_request("/checkout/sessions", secret, {
             "mode": "payment", "success_url": f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
-            "cancel_url": f"{origin}/payment/cancelled?booking_id={booking.id}",
+            "cancel_url": f"{origin}/payment/cancelled?{cancel_query}",
+            "expires_at": str(int(time.time()) + 30 * 60),
             "customer_email": guest.email, "client_reference_id": str(booking.id),
             "metadata[booking_id]": str(booking.id),
             "line_items[0][price_data][currency]": "inr",
             "line_items[0][price_data][unit_amount]": str(round(total * 100)),
             "line_items[0][price_data][product_data][name]": f"{listing.title} · {nights} night{'s' if nights != 1 else ''}",
+            "line_items[0][price_data][product_data][description]": f"{payload.check_in.isoformat()} to {payload.check_out.isoformat()} · {payload.guests} guest{'s' if payload.guests != 1 else ''}",
             "line_items[0][quantity]": "1",
         })
         if not session.get("url"):
             raise HTTPException(status_code=502, detail="Stripe did not return a checkout URL")
+        booking.stripe_session_id = session["id"]
+        db.commit()
         return {"checkout_url": session["url"], "session_id": session["id"], "booking_id": booking.id}
     except Exception:
         db.delete(booking)
@@ -134,7 +158,7 @@ def check_checkout(session_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid test Checkout Session ID")
     session = stripe_request(f"/checkout/sessions/{session_id}", secret)
     booking = _set_session_status(session, db)
-    return {"paid": session.get("payment_status") == "paid", "booking_id": booking.id if booking else None, "status": booking.status if booking else "unknown"}
+    return {"paid": bool(booking and booking.payment_status == "paid"), "booking_id": booking.id if booking else None, "status": booking.status if booking else "unknown", "payment_status": booking.payment_status if booking else "unknown"}
 
 
 @router.post("/cancel/{booking_id}")
@@ -143,9 +167,18 @@ def cancel_pending_checkout(booking_id: int, db: Session = Depends(get_db)):
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     if booking.status == "pending_payment":
+        secret = os.getenv("STRIPE_SECRET_KEY", "")
+        if secret.startswith("sk_test_") and booking.stripe_session_id:
+            session = stripe_request(f"/checkout/sessions/{booking.stripe_session_id}", secret)
+            _set_session_status(session, db)
+            if booking.payment_status == "paid":
+                return {"status": booking.status, "payment_status": booking.payment_status}
+            if session.get("status") == "open":
+                stripe_request(f"/checkout/sessions/{booking.stripe_session_id}/expire", secret, {})
         booking.status = "cancelled"
+        booking.payment_status = "cancelled"
         db.commit()
-    return {"status": booking.status}
+    return {"status": booking.status, "payment_status": booking.payment_status}
 
 
 @router.post("/webhook")

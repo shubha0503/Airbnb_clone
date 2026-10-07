@@ -5,7 +5,7 @@ import { ListingCard } from '@/components/ListingCard';
 import { MapView } from '@/components/MapView';
 import { FilterModal } from '@/components/FilterModal';
 import { Listing, SearchFilters } from '@/types';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 import { 
   SlidersHorizontal, 
   ChevronRight,
@@ -47,8 +47,9 @@ export default function HomePage() {
   };
 
   const fetchWishlist = async () => {
+    const userId = getCurrentUserId();
+    if (!userId) { setWishlistIds([]); return; }
     try {
-      const userId = Number(localStorage.getItem('airbnb-user-id')) || 4;
       const wishlists = await api.getWishlist(userId);
       setWishlistIds(wishlists.map((w) => w.listing_id));
     } catch (err) {
@@ -84,9 +85,11 @@ export default function HomePage() {
     };
     window.addEventListener('airbnb-search-submit', onSearchSubmit);
     window.addEventListener('airbnb-search-clear', onSearchClear);
+    window.addEventListener('airbnb-user-change', fetchWishlist);
     return () => {
       window.removeEventListener('airbnb-search-submit', onSearchSubmit);
       window.removeEventListener('airbnb-search-clear', onSearchClear);
+      window.removeEventListener('airbnb-user-change', fetchWishlist);
     };
   }, []);
 
@@ -125,8 +128,9 @@ export default function HomePage() {
   };
 
   const handleToggleWishlist = async (listingId: number) => {
+    const userId = getCurrentUserId();
+    if (!userId) { window.location.assign('/login?next=/'); return; }
     try {
-      const userId = Number(localStorage.getItem('airbnb-user-id')) || 4;
       const res = await api.toggleWishlist(userId, listingId);
       if (res.in_wishlist) {
         setWishlistIds([...wishlistIds, listingId]);

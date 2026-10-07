@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.wishlist import Wishlist
+from app.models.listing import Listing
+from app.models.user import User
 from app.schemas.wishlist import (
     WishlistCreate,
     WishlistResponse
@@ -50,7 +53,11 @@ def add_to_wishlist(
     )
 
     db.add(db_wishlist)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This listing is already in the wishlist")
     db.refresh(db_wishlist)
 
     return db_wishlist
@@ -80,3 +87,24 @@ def remove_from_wishlist(
     return {
         "message": "Removed from wishlist"
     }
+
+
+@router.post("/toggle/{user_id}/{listing_id}")
+def toggle_wishlist(user_id: int, listing_id: int, db: Session = Depends(get_db)):
+    if not db.query(User.id).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="Account not found")
+    if not db.query(Listing.id).filter(Listing.id == listing_id).first():
+        raise HTTPException(status_code=404, detail="Listing not found")
+    item = db.query(Wishlist).filter(Wishlist.user_id == user_id, Wishlist.listing_id == listing_id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+        return {"in_wishlist": False}
+    db.add(Wishlist(user_id=user_id, listing_id=listing_id))
+    try:
+        db.commit()
+        return {"in_wishlist": True}
+    except IntegrityError:
+        db.rollback()
+        exists = db.query(Wishlist.id).filter(Wishlist.user_id == user_id, Wishlist.listing_id == listing_id).first()
+        return {"in_wishlist": bool(exists)}

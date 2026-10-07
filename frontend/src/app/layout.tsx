@@ -6,7 +6,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { Toaster } from 'react-hot-toast';
 import { User } from '@/types';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 
 export default function RootLayout({
   children,
@@ -16,14 +16,20 @@ export default function RootLayout({
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const savedId = Number(localStorage.getItem('airbnb-user-id')) || 4;
-    api.getUser(savedId).catch(() => api.getAllUsers().then((users) => {
-      if (users[0]) localStorage.setItem('airbnb-user-id', String(users[0].id));
-      return users[0];
-    })).then((user) => {
-      if (user) setCurrentUser(user);
-    }).catch(console.error);
-    const syncUser = () => api.getUser(Number(localStorage.getItem('airbnb-user-id'))).then(setCurrentUser).catch(console.error);
+    if (localStorage.getItem('airbnb-auth-version') !== '2') {
+      localStorage.removeItem('airbnb-user-id');
+      localStorage.setItem('airbnb-auth-version', '2');
+    }
+    const loadCurrentUser = () => {
+      const savedId = getCurrentUserId();
+      if (!savedId) { setCurrentUser(null); return; }
+      api.getUser(savedId).then(setCurrentUser).catch(() => {
+        localStorage.removeItem('airbnb-user-id');
+        setCurrentUser(null);
+      });
+    };
+    loadCurrentUser();
+    const syncUser = () => loadCurrentUser();
     window.addEventListener('airbnb-user-change', syncUser);
     return () => window.removeEventListener('airbnb-user-change', syncUser);
   }, []);
@@ -40,7 +46,6 @@ export default function RootLayout({
         
         <Header
           currentUser={currentUser}
-          onUserSwitch={(newUser) => setCurrentUser(newUser)}
         />
 
         <main className="flex-1">

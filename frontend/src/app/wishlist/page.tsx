@@ -3,18 +3,20 @@
 import React, { useState, useEffect } from 'react';
 import { ListingCard } from '@/components/ListingCard';
 import { Wishlist } from '@/types';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 import { Heart } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 
 export default function WishlistPage() {
   const [wishlists, setWishlists] = useState<Wishlist[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchWishlist = async () => {
+    const userId = getCurrentUserId();
+    if (!userId) { setWishlists([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const userId = Number(localStorage.getItem('airbnb-user-id')) || 4;
       const data = await api.getWishlist(userId);
       setWishlists(data);
     } catch (err) {
@@ -26,11 +28,14 @@ export default function WishlistPage() {
 
   useEffect(() => {
     fetchWishlist();
+    window.addEventListener('airbnb-user-change', fetchWishlist);
+    return () => window.removeEventListener('airbnb-user-change', fetchWishlist);
   }, []);
 
   const handleToggleWishlist = async (listingId: number) => {
+    const userId = getCurrentUserId();
+    if (!userId) { window.location.assign('/login?next=/wishlist'); return; }
     try {
-      const userId = Number(localStorage.getItem('airbnb-user-id')) || 4;
       await api.toggleWishlist(userId, listingId);
       toast.success('Wishlist updated');
       fetchWishlist();
@@ -55,10 +60,9 @@ export default function WishlistPage() {
       ) : wishlists.length === 0 ? (
         <div className="bg-gray-50 rounded-3xl p-12 text-center border border-gray-200">
           <Heart size={48} className="mx-auto text-gray-400 mb-4 stroke-1" />
-          <h3 className="text-lg font-bold text-gray-900 mb-2">Your wishlist is empty</h3>
-          <p className="text-sm text-gray-500 max-w-sm mx-auto mb-6">
-            As you search, tap the heart icon on any stay to save your favorite spots.
-          </p>
+          <h3 className="text-lg font-bold text-gray-900 mb-2">{getCurrentUserId() ? 'Your wishlist is empty' : 'Log in to see your wishlist'}</h3>
+          <p className="text-sm text-gray-500 max-w-sm mx-auto mb-6">{getCurrentUserId() ? 'Save a stay with the heart button and it will appear here on this account.' : 'Your saved stays are tied to your account. Log in or create an account to save favorites.'}</p>
+          {!getCurrentUserId() && <Link href="/login?next=/wishlist" className="inline-flex rounded-xl bg-airbnb px-5 py-3 text-sm font-semibold text-white">Log in</Link>}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

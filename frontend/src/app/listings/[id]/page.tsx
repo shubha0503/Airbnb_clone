@@ -30,7 +30,7 @@ import {
   Search
 } from 'lucide-react';
 import { Listing, Review } from '@/types';
-import { api } from '@/services/api';
+import { api, getCurrentUserId } from '@/services/api';
 import toast from 'react-hot-toast';
 import { FALLBACK_STAY_IMAGE, getListingImageUrl, useImageFallback } from '@/lib/images';
 import { MapView } from '@/components/MapView';
@@ -69,7 +69,6 @@ export default function ListingDetailPage() {
   const [guests, setGuests] = useState(1);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
-  const [isDemoPaymentComplete, setIsDemoPaymentComplete] = useState(false);
 
   // Modals
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
@@ -88,13 +87,18 @@ export default function ListingDetailPage() {
   useEffect(() => {
     if (!listingId) return;
 
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkIn')) setCheckIn(params.get('checkIn')!);
+    if (params.get('checkOut')) setCheckOut(params.get('checkOut')!);
+    if (params.get('guests')) setGuests(Math.max(1, Number(params.get('guests')) || 1));
+
     setLoading(true);
     api.getListingById(listingId)
       .then(async (listingData) => {
         setListing(listingData);
         const [reviewData, wishlistData, allListings, availability] = await Promise.all([
           api.getListingReviews(listingId).catch(() => []),
-          api.checkWishlist(Number(localStorage.getItem('airbnb-user-id')) || 4, listingId).catch(() => ({ in_wishlist: false })),
+          getCurrentUserId() ? api.checkWishlist(getCurrentUserId()!, listingId).catch(() => ({ in_wishlist: false })) : Promise.resolve({ in_wishlist: false }),
           api.getListings().catch(() => ({ items: [] })),
           api.getAvailability(listingId).catch(() => ({ unavailable_dates: [] })),
         ]);
@@ -113,10 +117,12 @@ export default function ListingDetailPage() {
 
   const handleToggleWishlist = async () => {
     if (!listing) return;
+    const userId = getCurrentUserId();
+    if (!userId) { router.push(`/login?next=/listings/${listing.id}`); return; }
     try {
-      const res = await api.toggleWishlist(Number(localStorage.getItem('airbnb-user-id')) || 4, listing.id);
+      const res = await api.toggleWishlist(userId, listing.id);
       setIsWishlist(res.in_wishlist);
-      toast.success(res.message);
+      toast.success(res.in_wishlist ? 'Saved to wishlist' : 'Removed from wishlist');
     } catch {
       toast.error('Could not update wishlist');
     }
@@ -138,6 +144,10 @@ export default function ListingDetailPage() {
   const totalDue = nightlySubtotal + cleaningFee + serviceFee;
 
   const handleReserveClick = () => {
+    if (!getCurrentUserId()) {
+      router.push(`/login?next=/listings/${listing?.id}`);
+      return;
+    }
     if (!checkIn || !checkOut || checkOut <= checkIn) {
       toast.error('Choose a check-out date after check-in');
       return;
@@ -146,16 +156,21 @@ export default function ListingDetailPage() {
       toast.error('Those dates overlap an existing reservation. Choose different dates.');
       return;
     }
-    setIsDemoPaymentComplete(false);
     setIsCheckoutModalOpen(true);
   };
 
   const handleConfirmPayment = async () => {
     if (!listing) return;
+    const guestId = getCurrentUserId();
+    if (!guestId) { router.push(`/login?next=/listings/${listing.id}`); return; }
     setIsSubmittingBooking(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
-    setIsSubmittingBooking(false);
-    setIsDemoPaymentComplete(true);
+    try {
+      const session = await api.createCheckout({ listing_id: listing.id, guest_id: guestId, check_in: checkIn, check_out: checkOut, guests });
+      window.location.assign(session.checkout_url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start secure checkout');
+      setIsSubmittingBooking(false);
+    }
   };
 
   const handleAddReview = async () => {
@@ -163,10 +178,12 @@ export default function ListingDetailPage() {
       toast.error('Please enter a comment');
       return;
     }
+    const userId = getCurrentUserId();
+    if (!userId) { router.push(`/login?next=/listings/${listing.id}`); return; }
     try {
       const createdReview = await api.createReview({
         listing_id: listing.id,
-        user_id: Number(localStorage.getItem('airbnb-user-id')) || 4,
+        user_id: userId,
         rating: newRating,
         comment: newComment,
       });
@@ -700,37 +717,24 @@ export default function ListingDetailPage() {
       </div>
 
       {/* Checkout Modal */}
-      {isCheckoutModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in">
+      {isCheckoutModalOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/55 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in">
           <div className="bg-white max-w-2xl w-full max-h-[92vh] rounded-3xl shadow-2xl overflow-y-auto border border-gray-100">
             <div className="sticky top-0 z-10 bg-white flex items-center justify-between border-b border-gray-100 px-5 py-4 sm:px-7">
               <button onClick={() => setIsCheckoutModalOpen(false)} aria-label="Close checkout summary" className="p-2 -ml-2 rounded-full hover:bg-gray-100"><X size={18} /></button>
               <h3 className="text-base font-bold text-gray-900">Confirm and pay</h3>
               <span className="w-9" />
             </div>
-            <section className={`${isDemoPaymentComplete ? 'block' : 'hidden'} px-6 py-12 text-center sm:px-12`}>
-                <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-50 text-emerald-600"><CheckCircle size={34}/></div>
-                <p className="mt-5 text-xs font-bold uppercase tracking-widest text-emerald-700">Demo payment complete</p>
-                <h3 className="mt-2 text-2xl font-bold">Your stay is reserved</h3>
-                <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-gray-600">This is a visual checkout preview. No payment was processed and no booking was created.</p>
-                <div className="mx-auto mt-6 max-w-sm rounded-2xl bg-gray-50 p-4 text-left text-sm"><p className="font-bold">{listing.title}</p><p className="mt-1 text-gray-600">{checkIn} – {checkOut} · {nights} nights · {guests} guest(s)</p><p className="mt-3 border-t border-gray-200 pt-3 font-bold">Demo total · ₹{totalDue.toLocaleString('en-IN')}</p></div>
-                <button onClick={() => { setIsCheckoutModalOpen(false); setIsDemoPaymentComplete(false); }} className="mt-7 w-full max-w-sm rounded-xl bg-gray-900 px-5 py-3.5 text-sm font-bold text-white hover:bg-black">Back to your stay</button>
-            </section>
-            <div className={`${isDemoPaymentComplete ? 'hidden' : 'grid'} md:grid-cols-[1.1fr_.9fr]`}>
+            <div className="grid md:grid-cols-[1.1fr_.9fr]">
               <div className="p-5 sm:p-7 space-y-5">
                 <div className="flex items-center gap-3 rounded-2xl border border-gray-200 p-3">
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700"><Lock size={16}/></span>
-                  <div><p className="text-sm font-bold">Secure checkout</p><p className="mt-0.5 text-xs text-gray-500">Demo payment · no real charge will be made</p></div>
+                  <div><p className="text-sm font-bold">Secure Stripe checkout</p><p className="mt-0.5 text-xs text-gray-500">Stripe test mode · no real charge</p></div>
                 </div>
                 <section className="space-y-3">
-                  <h4 className="text-lg font-bold">Pay with</h4>
-                  <div className="rounded-2xl border-2 border-gray-900 p-4">
-                    <div className="flex justify-between"><span className="text-sm font-semibold">Credit or debit card</span><span className="text-xs font-bold tracking-wide text-blue-800">VISA · UPI</span></div>
-                    <label className="mt-4 block text-xs font-semibold text-gray-600">Card number</label>
-                    <input aria-label="Demo card number" inputMode="numeric" placeholder="4242 4242 4242 4242" className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-gray-900" />
-                    <div className="mt-3 grid grid-cols-2 gap-3"><div><label className="block text-xs font-semibold text-gray-600">Expiry</label><input aria-label="Demo card expiry" placeholder="MM / YY" className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-gray-900" /></div><div><label className="block text-xs font-semibold text-gray-600">CVV</label><input aria-label="Demo card security code" placeholder="123" className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-gray-900" /></div></div>
-                  </div>
+                  <h4 className="text-lg font-bold">Payment details</h4>
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-600">Continue to Stripe&apos;s hosted test checkout to enter test payment details. This app never receives or stores card data.</div>
                 </section>
-                <p className="text-xs leading-5 text-gray-500">This is a frontend demonstration. Enter any sample details to preview confirmation; card data is not sent or saved.</p>
+                <p className="text-xs leading-5 text-gray-500">Stripe test card: 4242 4242 4242 4242 · any future expiry · any 3 digit CVC.</p>
               </div>
               <div className="bg-gray-50 p-5 sm:p-7 md:border-l md:border-gray-200">
             <div className="space-y-4 text-xs">
@@ -767,7 +771,7 @@ export default function ListingDetailPage() {
               disabled={isSubmittingBooking}
               className="w-full bg-airbnb hover:bg-airbnb-dark text-white font-bold py-3.5 rounded-2xl shadow-md transition flex items-center justify-center gap-2 text-xs"
             >
-              {isSubmittingBooking ? 'Processing demo payment…' : `Pay ₹${totalDue.toLocaleString('en-IN')}`}
+              {isSubmittingBooking ? 'Connecting to Stripe…' : `Continue to payment · ₹${totalDue.toLocaleString('en-IN')}`}
             </button>
               </div>
             </div>

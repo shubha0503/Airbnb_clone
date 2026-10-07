@@ -160,3 +160,9 @@ class Listing(Base):
         secondary="listing_amenities",
         viewonly=True,
     )
+
+    wishlists = relationship(
+        "Wishlist",
+        back_populates="listing",
+        cascade="all, delete-orphan",
+    )

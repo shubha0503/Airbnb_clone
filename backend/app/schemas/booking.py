@@ -23,6 +23,7 @@ class BookingResponse(BaseModel):
     service_fee: float
     total_price: float
     status: str
+    payment_status: str = "legacy"
     created_at: datetime
 
     class Config:

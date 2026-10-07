@@ -1,12 +1,22 @@
-from sqlalchemy import create_engine, inspect, text
+from pathlib import Path
+
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "sqlite:///./airbnb.db"
+DATABASE_PATH = Path(__file__).resolve().parents[1] / "airbnb.db"
+DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
+
+
+@event.listens_for(engine, "connect")
+def enable_sqlite_foreign_keys(connection, _record):
+    cursor = connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -38,6 +48,26 @@ def ensure_schema():
         if "password_hash" not in columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+    if "bookings" in inspect(engine).get_table_names():
+        columns = {column["name"] for column in inspect(engine).get_columns("bookings")}
+        booking_migrations = {
+            "payment_status": "VARCHAR NOT NULL DEFAULT 'legacy'",
+            "stripe_session_id": "VARCHAR",
+            "stripe_payment_intent_id": "VARCHAR",
+        }
+        with engine.begin() as connection:
+            for column, definition in booking_migrations.items():
+                if column not in columns:
+                    connection.execute(text(f"ALTER TABLE bookings ADD COLUMN {column} {definition}"))
+    if "wishlists" in inspect(engine).get_table_names():
+        with engine.connect() as connection:
+            duplicates = connection.execute(text("SELECT 1 FROM wishlists GROUP BY user_id, listing_id HAVING COUNT(*) > 1 LIMIT 1")).first()
+        if not duplicates:
+            with engine.begin() as connection:
+                connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_wishlists_user_listing ON wishlists(user_id, listing_id)"))
+    if "bookings" in inspect(engine).get_table_names():
+        with engine.begin() as connection:
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_bookings_stripe_session ON bookings(stripe_session_id) WHERE stripe_session_id IS NOT NULL"))
 
 
 def get_db():

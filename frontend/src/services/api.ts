@@ -2,6 +2,12 @@ import { Booking, Listing, Review, User, SearchFilters, Wishlist } from '@/types
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
 
+export const getCurrentUserId = (): number | null => {
+  if (typeof window === 'undefined') return null;
+  const id = Number(window.localStorage.getItem('airbnb-user-id'));
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {
@@ -40,13 +46,13 @@ const normalizeListing = (l: any): Listing => ({
 const normalizeBooking = (b: any): Booking => ({ ...b, user_id: b.guest_id, listing: b.listing ? normalizeListing(b.listing) : undefined, user: b.guest ? normalizeUser(b.guest) : undefined });
 
 export const api = {
-  register: async (data: {name: string; email: string; password: string}) => normalizeUser(await fetchJson<any>('/auth/register', { method: 'POST', body: JSON.stringify(data) })),
+  register: async (data: {name: string; email: string; password: string; role?: 'guest' | 'host'}) => normalizeUser(await fetchJson<any>('/auth/register', { method: 'POST', body: JSON.stringify(data) })),
   login: async (data: {email: string; password: string}) => normalizeUser(await fetchJson<any>('/auth/login', { method: 'POST', body: JSON.stringify(data) })),
+  becomeHost: async (userId: number) => normalizeUser(await fetchJson<any>(`/auth/become-host/${userId}`, { method: 'POST' })),
   createCheckout: (data: {listing_id: number; guest_id: number; check_in: string; check_out: string; guests: number}) => fetchJson<{checkout_url: string; session_id: string; booking_id: number}>('/payments/checkout', { method: 'POST', body: JSON.stringify(data) }),
-  getPaymentSession: (sessionId: string) => fetchJson<{paid: boolean; booking_id: number | null; status: string}>(`/payments/session/${encodeURIComponent(sessionId)}`),
+  getPaymentSession: (sessionId: string) => fetchJson<{paid: boolean; booking_id: number | null; status: string; payment_status: string}>(`/payments/session/${encodeURIComponent(sessionId)}`),
   cancelPendingCheckout: (bookingId: number) => fetchJson<{status: string}>(`/payments/cancel/${bookingId}`, { method: 'POST' }),
   getAmenities: () => fetchJson<{id: number; name: string}[]>('/amenities/'),
-  getAllUsers: async () => (await fetchJson<any[]>('/users/')).map(normalizeUser),
   getUser: async (id: number) => normalizeUser(await fetchJson<any>(`/users/${id}`)),
   getListings: async (filters: SearchFilters = {}) => {
     const params = new URLSearchParams();
@@ -78,21 +84,13 @@ export const api = {
   updateListing: async (id: number, data: Record<string, unknown>, hostId: number) => normalizeListing(await fetchJson<any>(`/listings/${id}?host_id=${hostId}`, { method: 'PUT', body: JSON.stringify(data) })),
   deleteListing: (id: number, hostId: number) => fetchJson<void>(`/listings/${id}?host_id=${hostId}`, { method: 'DELETE' }),
   getHostReservations: async (hostId: number) => (await fetchJson<any[]>(`/hosts/${hostId}/bookings`)).map(normalizeBooking),
-  createBooking: async (data: { listing_id: number; guest_id: number; check_in: string; check_out: string; guests: number }) => normalizeBooking(await fetchJson<any>('/bookings/', { method: 'POST', body: JSON.stringify(data) })),
   getUserTrips: async (userId: number) => (await fetchJson<any[]>(`/bookings/my-trips/${userId}`)).map(normalizeBooking),
   cancelBooking: (id: number) => fetchJson<{message: string}>(`/bookings/${id}`, { method: 'DELETE' }),
   getListingReviews: (id: number) => fetchJson<Review[]>(`/reviews/listing/${id}`),
   createReview: (data: {listing_id: number; user_id: number; rating: number; comment: string}) => fetchJson<Review>('/reviews/', { method: 'POST', body: JSON.stringify(data) }),
   getWishlist: async (userId: number) => (await fetchJson<any[]>(`/wishlist/${userId}`)).map((item) => ({ ...item, listing: normalizeListing(item.listing) })),
   toggleWishlist: async (userId: number, listingId: number) => {
-    const current = await api.getWishlist(userId);
-    const existing = current.find((item) => item.listing_id === listingId);
-    if (existing) {
-      await fetchJson(`/wishlist/${userId}/${listingId}`, { method: 'DELETE' });
-      return { in_wishlist: false, message: 'Removed from wishlist' };
-    }
-    await fetchJson('/wishlist/', { method: 'POST', body: JSON.stringify({ user_id: userId, listing_id: listingId }) });
-    return { in_wishlist: true, message: 'Saved to wishlist' };
+    return fetchJson<{in_wishlist: boolean}>(`/wishlist/toggle/${userId}/${listingId}`, { method: 'POST' });
   },
   checkWishlist: async (userId: number, listingId: number) => ({ in_wishlist: (await api.getWishlist(userId)).some((item) => item.listing_id === listingId) }),
 };

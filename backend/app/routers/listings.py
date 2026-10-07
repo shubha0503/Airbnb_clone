@@ -614,6 +614,9 @@ def delete_listing(
                 detail="You do not own this listing",
             )
 
+    if db.query(Booking).filter(Booking.listing_id == listing_id).first():
+        raise HTTPException(status_code=409, detail="This listing has reservation history and cannot be deleted. Update it or remove it from search instead.")
+
     db.delete(listing)
     db.commit()
 

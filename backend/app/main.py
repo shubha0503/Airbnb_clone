@@ -21,6 +21,7 @@ from app.routers import (
 
 
 ensure_schema()
+auth.ensure_demo_accounts()
 
 
 app = FastAPI(
